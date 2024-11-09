@@ -171,7 +171,7 @@ class tacotron_mel():
             S = self._linear_to_mel(np.abs(D))
         return self.normalize(S).astype(np.float32)
 
-    
+
     def denormalize(self, S: np.ndarray) -> np.ndarray:
         """Denormalize spectrogram values.
 
@@ -208,8 +208,8 @@ class tacotron_mel():
                 S_denorm = (S_denorm * -self.min_level_db / self.max_norm) + self.min_level_db
                 return S_denorm + self.ref_level_db
         else:
-            return S_denorm 
-    
+            return S_denorm
+
 
     def _db_to_amp(self, x: np.ndarray) -> np.ndarray:
         """Convert decibels spectrogram to amplitude spectrogram.
@@ -270,7 +270,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 def dynamic_range_compression(x, C=1, clip_val=1e-5):
     """
     PARAMS
-    ------
+    ------brosa
     C: compression factor
     """
     return torch.log(torch.clamp(x, min=clip_val) * C)
@@ -327,7 +327,7 @@ def window_sumsquare(window, n_frames, hop_length=200, win_length=800,
     # Compute the squared window at the desired length
     win_sq = get_window(window, win_length, fftbins=True)
     win_sq = librosa_util.normalize(win_sq, norm=norm)**2
-    win_sq = librosa_util.pad_center(win_sq, n_fft)
+    win_sq = librosa_util.pad_center(win_sq, size=n_fft)
 
     # Fill the envelope
     for i in range(n_frames):
@@ -360,7 +360,7 @@ class STFT(torch.nn.Module):
             assert(filter_length >= win_length)
             # get window and zero center pad it to filter_length
             fft_window = get_window(window, win_length, fftbins=True)
-            fft_window = pad_center(fft_window, filter_length)
+            fft_window = pad_center(fft_window, size=filter_length)
             fft_window = torch.from_numpy(fft_window).float()
 
             # window the bases
@@ -378,6 +378,7 @@ class STFT(torch.nn.Module):
 
         # similar to librosa, reflect-pad the input
         input_data = input_data.view(num_batches, 1, num_samples)
+        print(f"input data shape: {input_data.shape}")
         input_data = F.pad(
             input_data.unsqueeze(1),
             (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
@@ -435,8 +436,8 @@ class STFT(torch.nn.Module):
         self.magnitude, self.phase = self.transform(input_data)
         reconstruction = self.inverse(self.magnitude, self.phase)
         return reconstruction
-    
-    
+
+
 def _mel_to_linear_matrix(sr, n_fft, n_mels, mel_fmin, mel_fmax):
     m = librosa.filters.mel(sr, n_fft, n_mels, mel_fmin, mel_fmax)
     m_t = np.transpose(m)
@@ -454,14 +455,14 @@ class TacotronSTFT(torch.nn.Module):
         self.sampling_rate = sampling_rate
         self.stft_fn = STFT(filter_length, hop_length, win_length)
         mel_basis = librosa_mel_fn(
-            sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
+            sr=sampling_rate, n_fft=filter_length, n_mels=n_mel_channels, fmin=mel_fmin, fmax=mel_fmax)
         mel_basis = torch.from_numpy(mel_basis).float()
-        self.register_buffer('mel_basis', mel_basis) # 
+        self.register_buffer('mel_basis', mel_basis) #
         # mel_to_linear_basis = _mel_to_linear_matrix(sampling_rate, filter_length, n_mel_channels, mel_fmin, mel_fmax)
         # mel_to_linear_basis = torch.from_numpy(mel_to_linear_basis).float()
         mel_to_linear_basis = torch.linalg.pinv(self.mel_basis)
         self.register_buffer('mel_to_linear_basis', mel_to_linear_basis) # register_buffer requires_grad is False
-        
+
 
     def spectral_normalize(self, magnitudes):
         output = dynamic_range_compression(magnitudes)
@@ -483,19 +484,19 @@ class TacotronSTFT(torch.nn.Module):
         """
         # add by chave luv
         y = self.wav_norm(y)
-        
+
         try:
             assert(torch.min(y.data) >= -1)
             assert(torch.max(y.data) <= 1)
         except Exception as e:
             print("y after normalization:{},{}".format(torch.min(y.data), torch.max(y.data)))
-            
+
         magnitudes, phases = self.stft_fn.transform(y)
         # magnitudes = magnitudes.data
         mel_output = torch.matmul(self.mel_basis, magnitudes)
         mel_output = self.spectral_normalize(mel_output)
         return mel_output
-    
+
     def griffin_lim(self, magnitudes, n_iters=60):
         """
         PARAMS
@@ -505,7 +506,7 @@ class TacotronSTFT(torch.nn.Module):
         """
         # add by chave luv
         magnitudes = torch.matmul(self.mel_to_linear_basis, self.spectral_de_normalize(magnitudes))
-        
+
         angles = np.angle(np.exp(2j * np.pi * np.random.rand(*magnitudes.size())))
         angles = angles.astype(np.float32)
         angles = torch.autograd.Variable(torch.from_numpy(angles)).to(device)
@@ -514,11 +515,11 @@ class TacotronSTFT(torch.nn.Module):
         for i in range(n_iters):
             _, angles = self.stft_fn.transform(signal)
             signal = self.stft_fn.inverse(magnitudes, angles).squeeze(1)
-        signal = self.wav_norm(signal)        
+        signal = self.wav_norm(signal)
         # return signal, magnitudes
         return signal
 
-    
+
     def wav_norm(self, y):
         max_value = torch.max(torch.abs(y))
         y = y/max_value
@@ -555,7 +556,7 @@ class fixed_STFT(torch.nn.Module):
             assert(filter_length >= win_length)
             # get window and zero center pad it to filter_length
             fft_window = get_window(window, win_length, fftbins=True)
-            fft_window = pad_center(fft_window, filter_length)
+            fft_window = pad_center(fft_window, size=filter_length)
             fft_window = torch.from_numpy(fft_window).float()
 
             # window the bases
@@ -566,6 +567,88 @@ class fixed_STFT(torch.nn.Module):
         self.register_buffer('inverse_basis', inverse_basis.float())
 
     def transform(self, input_data):
+        # input_data shape: [batch_size, channels, samples, stereo]
+        batch_size, channels, samples, stereo = input_data.shape
+
+        # Process left and right channels separately then average them
+        all_magnitudes = []
+        all_phases = []
+
+        for stereo_channel in range(stereo):
+            # Extract single stereo channel
+            channel_data = input_data[..., stereo_channel]  # shape: [batch_size, channels, samples]
+
+            # Apply padding
+            pad_size = int(self.filter_length / 2)
+            padded = F.pad(channel_data, (pad_size, pad_size), mode='reflect')
+
+            # Perform conv1d
+            forward_transform = F.conv1d(
+                padded,
+                self.forward_basis,
+                stride=self.hop_length,
+                padding=0)
+
+            # Split into real and imaginary components
+            cutoff = int((self.filter_length // 2) + 1)
+            real = forward_transform[:, :cutoff, :]
+            imag = forward_transform[:, cutoff:, :]
+
+            # Compute magnitude and phase
+            magnitude = torch.sqrt(real**2 + imag**2)
+            phase = torch.atan2(imag, real)
+
+            all_magnitudes.append(magnitude)
+            all_phases.append(phase)
+
+        # Average the magnitudes and phases
+        magnitudes = torch.stack(all_magnitudes, dim=0).mean(dim=0)
+        phases = torch.stack(all_phases, dim=0).mean(dim=0)
+
+        return magnitudes, phases
+
+    def transform_old2(self, input_data):
+        # input_data shape: [batch_size, channels, samples, stereo]
+        batch_size, channels, samples, stereo = input_data.shape
+
+        # Process left and right channels separately
+        magnitudes = []
+        phases = []
+
+        for stereo_channel in range(stereo):
+            # Extract single stereo channel
+            channel_data = input_data[..., stereo_channel]  # shape: [batch_size, channels, samples]
+
+            # Apply padding
+            pad_size = int(self.filter_length / 2)
+            padded = F.pad(channel_data, (pad_size, pad_size), mode='reflect')
+
+            # Perform conv1d
+            forward_transform = F.conv1d(
+                padded,
+                self.forward_basis,
+                stride=self.hop_length,
+                padding=0)
+
+            # Split into real and imaginary components
+            cutoff = int((self.filter_length // 2) + 1)
+            real = forward_transform[:, :cutoff, :]
+            imag = forward_transform[:, cutoff:, :]
+
+            # Compute magnitude and phase
+            magnitude = torch.sqrt(real**2 + imag**2)
+            phase = torch.atan2(imag, real)
+
+            magnitudes.append(magnitude)
+            phases.append(phase)
+
+        # Stack the transforms back together
+        magnitudes = torch.stack(magnitudes, dim=-1)
+        phases = torch.stack(phases, dim=-1)
+
+        return magnitudes, phases
+
+    def transform_old(self, input_data):
         # num_batches = input_data.size(0)
         # num_samples = input_data.size(1)
 
@@ -573,12 +656,15 @@ class fixed_STFT(torch.nn.Module):
 
         # # similar to librosa, reflect-pad the input
         # input_data = input_data.view(num_batches, 1, num_samples)
-        
+        batch_size, channels, samples, dims = input_data.shape
+        print(f"input data shape: {input_data.shape}")
+        input_data = input_data.view(-1,samples)
+        pad_size = int(self.filter_length/2)
         input_data = F.pad(
-            input_data.unsqueeze(1),
-            (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
+            input_data,
+            (pad_size, pad_size),
             mode='reflect')
-        input_data = input_data.squeeze(1)
+        input_data = input_data.view(batch_size,channels,-1,dims)
 
         forward_transform = F.conv1d(
             input_data,
@@ -632,4 +718,3 @@ class fixed_STFT(torch.nn.Module):
         self.magnitude, self.phase = self.transform(input_data)
         reconstruction = self.inverse(self.magnitude, self.phase)
         return reconstruction
-    

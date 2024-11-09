@@ -4,7 +4,7 @@ import numpy as np
 from torch.autograd import Variable
 from scipy.signal import get_window
 from librosa.util import pad_center, tiny
-from frequency import window_sumsquare
+from distortions.frequency import window_sumsquare
 
 
 class STFT(torch.nn.Module):
@@ -46,7 +46,7 @@ class STFT(torch.nn.Module):
 
         # # similar to librosa, reflect-pad the input
         # input_data = input_data.view(num_batches, 1, num_samples)
-        
+
         input_data = F.pad(
             input_data.unsqueeze(1),
             (int(self.filter_length / 2), int(self.filter_length / 2), 0, 0),
