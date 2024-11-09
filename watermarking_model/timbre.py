@@ -96,12 +96,27 @@ def process_audio(input_dir, output_dir, encoder, device, logger):
             # Load and process audio
             audio, sr = soundfile.read(str(audio_path))
             print(f"Original audio shape: {audio.shape}")
-            audio_tensor = torch.FloatTensor(audio).unsqueeze(0).unsqueeze(0).to(device)
+            max_samples = 2116891
+            if audio.shape[0] > max_samples:
+                parts = []
+                num_samples = audio.shape[0]
+                for start in range(0, num_samples, max_samples):
+                    end = min(start + max_samples, num_samples)
+                    parts.append(audio[start:end,:])
+                processed_parts = []
+                for part in parts:
+                    print(f"Processing part of size: {part.shape}")
+                    part_tensor = torch.FloatTensor(part).unsqueeze(0).unsqueeze(0).to(device)
+                    with torch.no_grad():
+                        part_encoded, carrier_watermarked = encoder.test_forward(part_tensor,msg)
+                    processed_parts.append(part_encoded)
+                encoded = torch.cat(processed_parts,dim=2)
+            else:
+                audio_tensor = torch.FloatTensor(audio).unsqueeze(0).unsqueeze(0).to(device)
 
-            # Apply watermark
-            with torch.no_grad():
-                encoded, carrier_watermarked = encoder.test_forward(audio_tensor, msg)
-
+                # Apply watermark
+                with torch.no_grad():
+                    encoded, carrier_watermarked = encoder.test_forward(audio_tensor, msg)
             # Save watermarked audio
 
 
